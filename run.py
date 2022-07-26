@@ -12,7 +12,7 @@ listen_address, listen_port, remote_address, remote_port = sys.argv[1], \
 try:
     max_active_connections = int(sys.argv[5])
 except IndexError:
-    max_active_connections = 100
+    max_active_connections = 5
 
 try:
     activity_timeout_seconds = int(sys.argv[6])
@@ -33,21 +33,35 @@ class SimpleQueue:
     def pop(self):
         return self.queue.pop(0)
 
+    def __len__(self):
+        return len(self.queue)
+
 connection_queue = SimpleQueue()
 
 def queue_manager(queue):
     global active_connections, max_active_connections, connection_queue
     global remote_address, remote_port
+    count = 0
     while True:
         if active_connections <= max_active_connections:
             try:
                 connection = connection_queue.pop()
                 new_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                new_socket.connect((remote_address, remote_port))
+                # Loop that can wait for proxied server to come up
+                while True:
+                    try:
+                        new_socket.connect((remote_address, remote_port))
+                        break
+                    except ConnectionRefusedError:
+                        time.sleep(0.1)
                 connection._proxy_socket = new_socket
                 connection._activated = True
             except IndexError:
                 pass
+        count += 1
+        if not count % 20:
+            DEBUG_PRINT("Active connections, waiting connections",
+			active_connections, len(connection_queue))
         time.sleep(0.1)
 
 _thread.start_new_thread(queue_manager, (connection_queue,))
@@ -69,6 +83,8 @@ class SimpleHandler(socketserver.StreamRequestHandler):
                 continue
             else:
                 break
+        global active_connections
+        active_connections += 1
         count = 0
         quit = 0
         user_s = self.request
@@ -108,6 +124,8 @@ class SimpleHandler(socketserver.StreamRequestHandler):
         global active_connections
         active_connections -= 1
         super().finish()
+        self.request.close()
+        self._proxy_socket.close()
 
 class SimpleTCPProxy(socketserver.ThreadingMixIn, socketserver.TCPServer):
 
