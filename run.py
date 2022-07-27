@@ -79,7 +79,7 @@ class SimpleHandler(socketserver.StreamRequestHandler):
             connection_queue.add(self)
         while True:
             if not self._activated:
-                time.sleep(0.001)
+                time.sleep(0.1)
                 continue
             else:
                 break
