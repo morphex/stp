@@ -9,6 +9,10 @@ from sdt import DEBUG_PRINT, INFO_PRINT
 listen_address, listen_port, remote_address, remote_port = sys.argv[1], \
 				int(sys.argv[2]), sys.argv[3], int(sys.argv[4])
 
+threading.stack_size(4096 * 8)
+
+EMPTY_BYTES = bytes()
+
 try:
     max_active_connections = int(sys.argv[5])
 except IndexError:
@@ -74,6 +78,7 @@ class SimpleHandler(socketserver.StreamRequestHandler):
 
     def handle(self):
         DEBUG_PRINT("Start of handle")
+        global EMPTY_BYTES
         if not self._activated:
             global connection_queue
             connection_queue.add(self)
@@ -89,9 +94,10 @@ class SimpleHandler(socketserver.StreamRequestHandler):
         quit = 0
         user_s = self.request
         proxy_s = self._proxy_socket
-        to_user = to_proxy = bytes()
+        to_user = to_proxy = EMPTY_BYTES
         last_activity = time.time()
         while True:
+            fall_through = False
             try:
                 to_proxy = user_s.recv(4096, socket.MSG_DONTWAIT)
             except ConnectionResetError:
@@ -99,11 +105,12 @@ class SimpleHandler(socketserver.StreamRequestHandler):
             except BlockingIOError:
                 pass
             if to_proxy:
+                fall_through = True
                 last_activity = time.time()
                 DEBUG_PRINT("Sending to proxy")
                 INFO_PRINT(to_proxy)
                 proxy_s.send(to_proxy)
-                to_proxy = bytes()
+                to_proxy = EMPTY_BYTES
             try:
                 to_user = proxy_s.recv(4096, socket.MSG_DONTWAIT)
             except ConnectionResetError:
@@ -111,11 +118,14 @@ class SimpleHandler(socketserver.StreamRequestHandler):
             except BlockingIOError:
                 pass
             if to_user:
+                fall_through = True
                 last_activity = time.time()
                 DEBUG_PRINT("Sending to user")
                 INFO_PRINT(to_user)
                 user_s.send(to_user)
-                to_user = bytes()
+                to_user = EMPTY_BYTES
+            if fall_through:
+                continue
             if last_activity + activity_timeout_seconds < time.time():
                 quit = 1
             if quit: break
