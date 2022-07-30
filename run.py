@@ -12,6 +12,7 @@ listen_address, listen_port, remote_address, remote_port = sys.argv[1], \
 threading.stack_size(4096 * 8)
 
 EMPTY_BYTES = bytes()
+BUFFER_SIZE = 4096 * 8
 
 try:
     max_active_connections = int(sys.argv[5])
@@ -78,7 +79,7 @@ class SimpleHandler(socketserver.StreamRequestHandler):
 
     def handle(self):
         DEBUG_PRINT("Start of handle")
-        global EMPTY_BYTES
+        global EMPTY_BYTES, BUFFER_SIZE
         if not self._activated:
             global connection_queue
             connection_queue.add(self)
@@ -99,7 +100,7 @@ class SimpleHandler(socketserver.StreamRequestHandler):
         while True:
             fall_through = False
             try:
-                to_proxy = user_s.recv(4096, socket.MSG_DONTWAIT)
+                to_proxy = user_s.recv(BUFFER_SIZE, socket.MSG_DONTWAIT)
             except ConnectionResetError:
                 quit = 1
             except BlockingIOError:
@@ -112,7 +113,7 @@ class SimpleHandler(socketserver.StreamRequestHandler):
                 proxy_s.send(to_proxy)
                 to_proxy = EMPTY_BYTES
             try:
-                to_user = proxy_s.recv(4096, socket.MSG_DONTWAIT)
+                to_user = proxy_s.recv(BUFFER_SIZE, socket.MSG_DONTWAIT)
             except ConnectionResetError:
                 quit = 1
             except BlockingIOError:
